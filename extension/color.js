@@ -195,9 +195,19 @@
     ['black', 'Black', [20, 20, 20]],
   ];
 
+  // Muted purples drift in hue (bluish ones toward 270, mauves toward 335) and
+  // sit at very low chroma, so purple gets a wider net the duller the color is.
+  const MUTED_CHROMA = 0.1;          // below this a color counts as muted
+  const PURPLE_GRAY_CHROMA = 0.022;  // purple-hued colors above this are not gray
+
   function familyOf(rgb) {
     const { L, C, h } = labToLch(...rgbToOklab(rgb[0], rgb[1], rgb[2]));
-    if (C < NEUTRAL_CHROMA) return L > 0.88 ? 'white' : L < 0.32 ? 'black' : 'gray';
+    const purpleish = h >= 275 && h < 345;
+    if (C < NEUTRAL_CHROMA) {
+      if (purpleish && C >= PURPLE_GRAY_CHROMA && L > 0.32 && L < 0.88) return 'purple';
+      return L > 0.88 ? 'white' : L < 0.32 ? 'black' : 'gray';
+    }
+    if (C < MUTED_CHROMA && h >= 265 && h < 345 && L < 0.88) return 'purple';
     if (h < 15 || h >= 345) return L > 0.68 || C < 0.12 ? 'pink' : 'red';
     if (h < 45) return L > 0.82 ? 'pink' : L < 0.42 && C < 0.12 ? 'brown' : 'red';
     if (h < 75) return L < 0.6 ? 'brown' : 'orange';
@@ -212,6 +222,15 @@
   // Families a block is indexed under: its dominant color, plus any other
   // color covering a real share of the image. Grays need a bigger share, or
   // every screenshot on a white page would be filed under White.
+  // A "pop": a small but saturated patch. Purple is tagged from a much smaller
+  // share than other colors, so a photo with one purple accent is findable.
+  const POP_CHROMA = 0.09;
+  const POP_WEIGHT = 0.03;
+
+  function chromaOf(rgb) {
+    return labToLch(...rgbToOklab(rgb[0], rgb[1], rgb[2])).C;
+  }
+
   function familiesOf(color) {
     if (!color) return [];
     const out = new Set([familyOf(color.rgb)]);
@@ -219,6 +238,7 @@
       const f = familyOf(p.rgb);
       const neutral = f === 'white' || f === 'gray' || f === 'black';
       if (p.weight >= (neutral ? 0.4 : 0.12)) out.add(f);
+      else if (f === 'purple' && p.weight >= POP_WEIGHT && chromaOf(p.rgb) >= POP_CHROMA) out.add(f);
     }
     return [...out];
   }
@@ -230,7 +250,7 @@
     const t = rgbToOklab(rgb[0], rgb[1], rgb[2]);
     let best = Infinity;
     for (const p of color.palette) {
-      if (p.weight < 0.1) continue;
+      if (p.weight < (chromaOf(p.rgb) >= POP_CHROMA ? POP_WEIGHT : 0.1)) continue;
       const d = Math.sqrt(dist2(t, rgbToOklab(p.rgb[0], p.rgb[1], p.rgb[2]))) - 0.04 * p.weight;
       if (d < best) best = d;
     }
